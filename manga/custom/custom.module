@@ -1,0 +1,332 @@
+<?php
+
+/**
+ * Implements hook_menu()
+ */
+ 
+function custom_menu() {
+	$items['create_nodes'] = array(
+    'title' => t('Add Entries'),
+    'description' => t(''),
+    'page callback' => 'custom_add_nodes',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+	$items['manga/%/%'] = array(
+    'title' => t(''),
+    'description' => t(''),
+    'page callback' => 'custom_manga_chepters',
+    'page arguments' => array(1,2),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+	$items['mangas/%/chapter/%'] = array(
+    'title' => t(''),
+    'description' => t(''),
+    'page callback' => 'custom_manga_episode',
+    'page arguments' => array(1,3),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+	$items['update_mangas'] = array(
+    'title' => t(''),
+    'description' => t(''),
+    'page callback' => 'update_mangas_table',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+	$items['list'] = array(
+     'title' => t(''),
+    'description' => t(''),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('list_data'),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+	return $items;
+}
+
+function list_data() {
+		global $base_url;
+	drupal_add_js(drupal_get_path('module', 'custom').'/custom.js');
+	$data = $_SESSION['episode'];
+	foreach($data->images as $images) {
+		$rowsdata = array();
+		$rowsdata[] = "<img class='lazy' data-src=''  />";
+		$rows[] = $rowsdata;
+	}
+	$header[] = array("data" => "");
+  $per_page = 1;
+  $current_page = pager_default_initialize(count($rows), $per_page);
+  $chunks = array_chunk(array_reverse($rows), $per_page, TRUE);
+  $output = theme('table', array('header' => $header, 'rows' => $chunks[$current_page], 'attributes' => array( "align" => "center")));
+  $output .= theme('pager', array('quantity',count($rows)));
+
+	
+	$chapters = array();
+	$episode = array();
+	foreach($_SESSION['chepters_list']->chapters as $values ) {
+		$chapters[$values[0]] = $_SESSION['chepters_list']->alias.' Chapter '.$values[0];
+	}
+	$i = 1;
+	foreach($_SESSION['episode']->images as $data) {
+		$episode[$i] = $i;
+		$i++;
+	}
+	 $myvars =array('current_path' =>  current_path(), 'base_url' => $base_url);
+		drupal_add_js($myvars, 'setting'); 
+	$form['chapter_list'] = array(
+		'#title' => '',
+		'#type' => 'select',
+		'#options' => $chapters,
+		//'#default_value' => isset($_GET['page']) ? $_GET['page'] : '',
+		'#attributes' => array('id' => array('chapter_list')),
+	); 
+	$form['episode_list'] = array(
+		'#title' => 'Test',
+		'#type' => 'select',
+		'#default_value' => isset($_GET['page']) ? $_GET['page']+1 : '',
+		'#options' => $episode,
+		'#attributes' => array('id' => array('episode_list')),
+	);
+	 $form['who_is_results'] = array(
+    '#markup' => '<div id="live-domain-preview" class="who-is-domain-preview">' . $output . '</div>',
+  );
+
+  return $form;
+}
+/**
+ * Implements hook_theme()
+ */
+ 
+function custom_theme($existing, $type, $theme, $path) {
+  return array(
+    'chepters_list' => array(
+      'template' => 'chepters-list-display',
+      'arguments' => array(
+        'result' => NULL,
+      ),
+    ),
+  );
+}
+
+function update_mangas_table() {
+	//$query = db_select('tbl_manga_list','tb')->fields('tb')->range(1569, 13000);
+	$query = "SELECT manga_ID, id FROM  tbl_manga_list tb LIMIT 1000, 12583";
+	//$result = $query->execute();
+	$result = db_query($query);
+	foreach($result as $values) {
+		$genre = '';
+		$url = "http://www.mangaeden.com/api/manga/".$values->manga_ID;
+		$data = api_request1($url);
+		$last_chapter_date = '';
+		if(isset($data->last_chapter_date)) {
+			$last_chapter_date = $data->last_chapter_date;
+		}
+		if(isset($data->categories)) {
+			$genre = implode(", ", $data->categories);
+		}
+		$record = db_update('tbl_manga_list')
+				->fields(array(
+					'genre' => $genre,
+					'last_chapter_date' => $last_chapter_date,
+				))
+			->condition('id', $values->id, '=')
+			->execute();
+		/* $array = array($values->id, $genre, $last_chapter_date);
+		$operations[] = array('update_manga_batch_process', array($array)); */
+	}
+		/* $batch = array(
+			'operations' => $operations,
+			'finished' => 'update_mangas_batch_finished',
+		);
+		batch_set($batch); 
+		batch_process('admin/content');  */
+		//return 'true';
+}
+
+
+function update_manga_batch_process($content, &$context) {
+	$record = db_update('tbl_manga_list')
+				->fields(array(
+					'genre' => $content[1],
+					'last_chapter_date' => $content[2],
+				))
+			->condition('id', $content[0], '=')
+			->execute();
+	//drupal_set_message('<pre>'.print_r($content,1).'</pre>');
+	
+}
+
+function update_mangas_batch_finished($success, $results, $operations) {
+	drupal_set_message('<pre>'.print_r($success,1).'</pre>');
+}
+
+function custom_node_presave($node) {
+	//drupal_set_message('<pre>'.print_r($node,1).'</pre>');
+}
+
+function custom_add_nodes() {
+	//$query = db_select('tbl_manga_list','tb')->fields('tb')->range(1569, 13000);
+	$query = "SELECT * FROM  tbl_manga_list tb LIMIT 1568, 12583";
+	//$result = $query->execute();
+	$result = db_query($query);
+	foreach($result as $values) {
+		//drupal_set_message('<pre>'.print_r($values,1).'</pre>');
+		$node                  = new stdClass();
+		$node->title          = $values->title;
+		$node->type         = 'manga';
+		$node->field_manga_id['und'][0]['value']     = $values->manga_ID;
+		$node->field_alias['und'][0]['value']    = $values->alias;
+		$node->field_manga_image['und'][0]['value']   = $values->image;         // Published?
+		$node->field_status['und'][0]['value'] = $values->manga_status;         // Display on front page?
+		$node->field_hits['und'][0]['value']  = $values->hits;          // Display top of page?
+		$operations[] = array('custom_batch_process', array($node));
+	}
+		$batch = array(
+			'operations' => $operations,
+			'finished' => 'custom_batch_finished',
+		);
+		batch_set($batch); 
+		batch_process('admin/content'); 
+		//return 'true';
+}
+
+function custom_batch_process($content, &$context) {
+	node_save($content);
+	//drupal_set_message('<pre>'.print_r($content,1).'</pre>');
+}
+
+function custom_batch_finished($success, $results, $operations) {
+	drupal_set_message('<pre>'.print_r($success,1).'</pre>');
+}
+
+function custom_manga_chepters($nid, $alias) {
+	drupal_Set_title($alias);
+	drupal_add_css(drupal_get_path('module', 'custom') . '/custom.css');
+	$query = db_select("field_data_field_manga_id", 'mid');
+	$query->fields('mid', array('field_manga_id_value'));
+	$query->condition('mid.entity_id', $nid, '=');
+	$manga_id = $query->execute()->fetchField();
+	
+	$var = false;
+	if(isset($_SESSION['manga_id'])) {
+		if($_SESSION['manga_id'] != $manga_id) {
+				$var = true;
+		}
+	} else {
+		$var = true;
+	}
+	if($var) {
+		$url = "http://www.mangaeden.com/api/manga/".$manga_id;
+		$data = api_request1($url);
+		$_SESSION['chepters_list'] = $data;
+		$_SESSION['manga_id'] = $manga_id;
+	} else {
+		$data = $_SESSION['chepters_list'];
+	} 
+	return theme('chepters_list', array('result' => $data));
+}
+
+function custom_manga_episode($alias, $chepter_no) {
+	if(isset($_SESSION['chepters_list'])) {
+		$chapters_list = $_SESSION['chepters_list'];
+		if($chapters_list->alias == $alias) {
+			$chapterid = '';
+			foreach($chapters_list->chapters as $chapters) {
+				if($chapters[0] == $chepter_no) {
+					$chapterid = $chapters[3];
+				}
+			}
+			if($chapterid != '' && $chapterid != $_SESSION['chapterid']) {
+					unset($_SESSION['episode']);
+					$url = 'http://www.mangaeden.com/api/chapter/'.$chapterid;
+					$data = api_request1($url);
+					//drupal_set_message('<pre>'.print_r($data,1).'</pre>');
+					$_SESSION['episode'] = $data;
+					$_SESSION['chapterid'] = $chapterid;
+			}
+			else {
+				$data = $_SESSION['episode'];
+			}
+		} 
+	}
+	else {
+		drupal_goto('manga-list');
+	}
+	global $base_url;
+	//drupal_set_message($base_url);
+	foreach($data->images as $images) {
+		$rowsdata = array();
+		$rowsdata[] = "<img class='lazy' data-src='http://cdn1.mangaeden.com/mangasimg/$images[1]' />";
+		$rows[] = $rowsdata;
+	}
+	$header[] = array("data" => "");
+  $per_page = 1;
+  $current_page = pager_default_initialize(count($rows), $per_page);
+  $chunks = array_chunk(array_reverse($rows), $per_page, TRUE);
+  $output = theme('table', array('header' => $header, 'rows' => $chunks[$current_page], 'attributes' => array( "align" => "center")));
+  $output .= theme('pager', array('quantity',count($rows)));
+
+	$build['custom_episode_form'] = drupal_get_form('manga_episode_form');
+	$build['custom_episode_data'] = array('#markup' =>  $output);
+	return $build;
+	
+}
+
+function manga_episode_form() {
+	global $base_url;
+	drupal_add_js(drupal_get_path('module', 'custom').'/custom.js');
+	$chapters = array();
+	$episode = array();
+	foreach($_SESSION['chepters_list']->chapters as $values ) {
+		$chapters[$values[0]] = $_SESSION['chepters_list']->alias.' Chapter '.$values[0];
+	}
+	$i = 1;
+	foreach($_SESSION['episode']->images as $data) {
+		$episode[$i] = $i;
+		$i++;
+	}
+	$myvars =array('current_path' =>  current_path(), 'base_url' => $base_url, 'totalpages' => count($episode), 'currentpage' => (isset($_GET['page']) ? $_GET['page'] : 0));
+	drupal_add_js($myvars, 'setting'); 
+	$form['chapter_list'] = array(
+		'#title' => '',
+		'#type' => 'select',
+		'#options' => $chapters,
+		'#default_value' => arg(3),
+		'#attributes' => array('id' => array('chapter_list')),
+	); 
+	$form['episode_list'] = array(
+		'#title' => '',
+		'#type' => 'select',
+		'#default_value' => isset($_GET['page']) ? $_GET['page']+1 : '',
+		'#options' => $episode,
+		'#attributes' => array('id' => array('episode_list')),
+	);
+	 $form['who_is_results'] = array(
+    '#markup' => '<div id="live-domain-preview" class="who-is-domain-preview">' . $output . '</div>',
+  );
+
+  return $form;
+}
+function api_request1($url) {
+	$response = file_get_contents($url);
+	$data = json_decode($response);
+	return $data;
+}
+function api_request($url) {
+	$curl = curl_init();
+	curl_setopt($curl, CURLOPT_URL, $url);
+	curl_setopt($curl, CURLOPT_HEADER, false);
+	//curl_setopt($curl, CURLOPT_HTTPHEADER,
+	//array("X-Mashape-Authorization=> a6xJlraRWfPfvjyMgcch1oZD7pamIorc"));
+	curl_setopt ($curl, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt ($curl, CURLOPT_FOLLOWLOCATION, true);
+	curl_setopt ($curl, CURLOPT_MAXREDIRS, 10);
+	$response = curl_exec($curl);
+	//$jsonString = json_encode($response, true);
+	$data=json_decode($response);
+	$status = curl_getinfo($curl); 
+	curl_close($curl);
+	return $data;
+}
